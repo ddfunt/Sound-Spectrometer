@@ -18,7 +18,7 @@ class Audio(QtCore.QThread):
     full_data =  QtCore.Signal(object)
     def __init__(self):
         super(Audio, self).__init__()
-        self.chunk = 128
+        self.chunk = 1225
         self.format = pyaudio.paInt16
         self.channels = 2
         self.rate = 44100
@@ -114,7 +114,7 @@ class Audio(QtCore.QThread):
         return chan
 
     def average(self, avgs=20):
-        try:
+        #try:
             for i in range(avgs):
                 frames = self.record()
                 print 'herex'
@@ -125,8 +125,8 @@ class Audio(QtCore.QThread):
                 #else:
                 #    chan += self.open_recording()
 
-        except:
-            chan = np.zeros((10,2))
+        #except:
+        #    chan = np.zeros((10,2))
         #    print 'Likely buffer error in record'
 	self.full_data.emit(True)        
 	#return chan
@@ -246,10 +246,9 @@ class GUI(QtGui.QWidget):
         z = np.zeros(len(cut_data)*4)
         z[0:len(cut_data)] = cut_data
 
-        if len(z)> 0:
-            fft = abs(np.fft.fft(z)[0:len(z)/2])
-            freq = np.fft.fftfreq(len(fft)*2, 1/44100.)[0:len(z)/2]
-            self.data.setData(freq, fft)
+        fft = abs(np.fft.fft(z)[0:len(z)/2])
+        freq = np.fft.fftfreq(len(fft)*2, 1/44100.)[0:len(z)/2]
+        self.data.setData(freq, fft)
 
         self.audio.stop_stream()
         self.complete = True

@@ -1,5 +1,21 @@
 
-"""PyAudio example: Record a few seconds of audio and save to a WAVE file."""
+"""This is designed to create either a single frequency audio snippet
+or chirped frequency sweep between 0-20KHz and play that sound through a speaker.
+
+The output is recorded through a microphone and both the time data and FFT are 
+displayed on screen
+
+The program uses the current system default microphone and speaker devices sobe
+sure to set these defaults before launching the software.
+
+
+Currently only "emission" modes are working.  Support for absorbtion will be added
+
+Currently pulse lengths are fixed in code(but can be manually edited) and the FFT
+window can be changed in the UI by dragging the vertical slider bars on the graph. 
+
+Averaging is currently not working as it would require a "stable" trigger instead
+of using the system clock"""
 
 import PySide
 from pyqtgraph import QtGui, QtCore
@@ -13,9 +29,57 @@ import struct
 import time
 import array
 
+
+### Global functions to write output waveform files
+
+def write_sine(frequency=1E3, t = .5, t_tot=3):
+
+    rate = 44100.
+
+    time = np.array([i*(1/rate) for i in range(int(t*rate))], dtype='float32')
+    d = np.zeros((t_tot*rate))
+    wav = np.sin(time*2*np.pi*frequency)*10000
+    d[:len(wav)] = wav
+
+    values = []
+    for value in d:
+        packed_value = struct.pack('h', value)
+        values.append(packed_value)
+        values.append(packed_value)
+
+    output = wave.open('tmp/sin.wav', 'w')
+    output.setparams((2, 2, 44100, 0, 'NONE', 'not compressed'))
+    output.writeframes("".join(values))
+    output.close()
+
+def write_chirp(start=100, stop=15E3, t = .5, t_tot = 3):
+
+    rate = 44100.
+
+    time = np.array([i*(1/rate) for i in range(int(t*rate))], dtype='float32')
+    k = (stop - start)/float(t)
+    d = np.zeros((t_tot*rate))
+    print start
+    wav = np.sin(2*np.pi*(start*time + (k/2)*time**2))*10000
+    d[:len(wav)] = wav
+    values = []
+    for value in d:
+        packed_value = struct.pack('h', value)
+        values.append(packed_value)
+        values.append(packed_value)
+
+    output = wave.open('tmp/chirp.wav', 'w')
+    output.setparams((2, 2, 44100, 0, 'NONE', 'not compressed'))
+    output.writeframes("".join(values))
+    output.close()
+
 class Audio(QtCore.QThread):
+    """contains nessicary functions for recording audio and transfering it
+    to the user interface
+    """
     dataReady= QtCore.Signal(object)
     full_data =  QtCore.Signal(object)
+    
     def __init__(self):
         super(Audio, self).__init__()
         self.chunk = 128
@@ -32,9 +96,11 @@ class Audio(QtCore.QThread):
     def setup_device(self):
 
         pass
+    
     def open_playback(self):
-        wf = wave.open('sin.wav', 'rb')
+        wf = wave.open('tmp/sin.wav', 'rb')
         return wf
+        
     def record(self):
 
         CHUNK = 128
@@ -56,7 +122,10 @@ class Audio(QtCore.QThread):
         wf = wave.open(self.waveform, 'rb')
         data_p = wf.readframes(CHUNK)
         frames = []
-        #for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
+        
+        #records audio in small chunks both to not overrun the system buffer
+        #and allow for real time viewing of the audio capture on screen
+        #too small of chunks will cause lag and "skipping" in the recording
         while data_p != '':
             data = stream.read(CHUNK)
             stream.write(data_p)#, CHUNK)
@@ -66,19 +135,14 @@ class Audio(QtCore.QThread):
             #map(ord, data)
             #nums = np.array('h', data)
             frames.append(data)
-            #print i, int(RATE / CHUNK * RECORD_SECONDS)
+            
 
         print("* done")
-
-        #joined = ''.join(frames)
-        #joined = map(ord, joined)
-        #print joined
         stream.stop_stream()
         stream.close()
-        #self.dataReady.emit('1')
+   
         p.terminate()
         wf.close()
-        #print 'here'
         wf = wave.open(self.output_name, 'w')
         wf.setnchannels(CHANNELS)
         wf.setsampwidth(p.get_sample_size(p.get_format_from_width(WIDTH)))
@@ -95,9 +159,6 @@ class Audio(QtCore.QThread):
         self.p.terminate()
         """
         pass
-
-
-
 
     def save_wav(self, frames):
         wf = wave.open(self.output_name, 'w')
@@ -117,65 +178,18 @@ class Audio(QtCore.QThread):
         try:
             for i in range(avgs):
                 frames = self.record()
-                print 'herex'
-                #self.save_wav(frames)
-                print 'here'
-                #if i == 0:
-                #    chan = self.open_recording()
-                #else:
-                #    chan += self.open_recording()
-
+                
         except:
+            #this should return an error however if a recording fails it jsut returns
+        #a  zero array
             chan = np.zeros((10,2))
         #    print 'Likely buffer error in record'
+            
 	self.full_data.emit(True)        
 	#return chan
     def run(self):
 	self.average(avgs=1)
 
-
-
-
-def write_sine(frequency=1E3, t = .5, t_tot=3):
-
-    rate = 44100.
-
-    time = np.array([i*(1/rate) for i in range(int(t*rate))], dtype='float32')
-    d = np.zeros((t_tot*rate))
-    wav = np.sin(time*2*np.pi*frequency)*10000
-    d[:len(wav)] = wav
-
-    values = []
-    for value in d:
-        packed_value = struct.pack('h', value)
-        values.append(packed_value)
-        values.append(packed_value)
-
-    output = wave.open('sin.wav', 'w')
-    output.setparams((2, 2, 44100, 0, 'NONE', 'not compressed'))
-    output.writeframes("".join(values))
-    output.close()
-
-def write_chirp(start=100, stop=15E3, t = .5, t_tot = 3):
-
-    rate = 44100.
-
-    time = np.array([i*(1/rate) for i in range(int(t*rate))], dtype='float32')
-    k = (stop - start)/float(t)
-    d = np.zeros((t_tot*rate))
-    print start
-    wav = np.sin(2*np.pi*(start*time + (k/2)*time**2))*10000
-    d[:len(wav)] = wav
-    values = []
-    for value in d:
-        packed_value = struct.pack('h', value)
-        values.append(packed_value)
-        values.append(packed_value)
-
-    output = wave.open('chirp.wav', 'w')
-    output.setparams((2, 2, 44100, 0, 'NONE', 'not compressed'))
-    output.writeframes("".join(values))
-    output.close()
 
 class GUI(QtGui.QWidget):
 
@@ -265,22 +279,15 @@ class GUI(QtGui.QWidget):
 	    self.raw_data = []
 
             if self.sin_radio.isChecked():
-                self.audio.waveform = 'sin.wav'
-                write_sine(frequency=self.sin_freq.value())
+                self.audio.waveform = 'tmp/sin.wav'
+                write_sine(frequency=self.sin_freq.value(), t=self.pulse_len.value())
                 pass
             else:
-                self.audio.waveform = 'chirp.wav'
-                write_chirp(start=self.chirp_start.value(), stop=self.chirp_stop.value())
+                self.audio.waveform = 'tmp/chirp.wav'
+                write_chirp(start=self.chirp_start.value(), stop=self.chirp_stop.value(), t=self.pulse_len.value())
 	    
 	    self.get_data()
-            #wf = wave.open('sin.wav', 'rb')
-            #self.audio.chunk = wf.getnframes()
-
-            #time.sleep(1)
-            #self.avg_thread.start()
-            #self.play.start()
-            #self.play.start()
-
+    
     def setup_gui(self):
         layout = QtGui.QGridLayout()
         mode_layout = QtGui.QHBoxLayout()
@@ -306,6 +313,9 @@ class GUI(QtGui.QWidget):
         self.chirp_start_lbl = QtGui.QLabel()
         self.chirp_stop_lbl = QtGui.QLabel()
         self.contin = QtGui.QCheckBox()
+        self.pulse_len = QtGui.QDoubleSpinBox()
+        self.len_label = QtGui.QLabel()
+
 
         self.start_btn.setText("Start")
         self.chirp_radio.setText("Chirped Pulse")
@@ -320,8 +330,9 @@ class GUI(QtGui.QWidget):
         self.sin_freq_lbl.setText("Frequency")
         self.sin_settings.setTitle("Settings")
         self.chirp_settings.setTitle("Settings")
+        self.len_label.setText('Length(s)')
 
-
+        
         layout.addWidget(self.start_btn, 4, 0)
         layout.addWidget(self.mode_group, 1, 0)
         layout.addWidget(self.pulse_group, 2, 0)
@@ -332,10 +343,14 @@ class GUI(QtGui.QWidget):
 
         sin_layout.addWidget(self.sin_freq_lbl)
         sin_layout.addWidget(self.sin_freq)
+        sin_layout.addWidget(self.len_label)
+        sin_layout.addWidget(self.pulse_len)
         chirp_layout.addWidget(self.chirp_start_lbl)
         chirp_layout.addWidget(self.chirp_start)
         chirp_layout.addWidget(self.chirp_stop_lbl)
         chirp_layout.addWidget(self.chirp_stop)
+        chirp_layout.addWidget(self.len_label)
+        chirp_layout.addWidget(self.pulse_len)
         mode_layout.addWidget(self.emission)
         mode_layout.addWidget((self.absorbption))
         pulse_layout.addWidget(self.sin_radio)
@@ -374,7 +389,7 @@ class GUI(QtGui.QWidget):
         self.time_data = self.time.plot()
 
     def set_defaults(self):
-        self.absorbption.setChecked(True)
+        self.emission.setChecked(True)
         self.sin_radio.setChecked(True)
         self.sin_freq.setMinimum(20)
         self.sin_freq.setMaximum(20000)
@@ -386,7 +401,14 @@ class GUI(QtGui.QWidget):
         #self.sin_freq.setValue(1000)
         self.chirp_start.setValue(100)
         self.chirp_stop.setValue(15000)
+        self.pulse_len.setMinimum(0.1)
+        self.pulse_len.setMaximum(3)
+        self.pulse_len.setValue(0.5)
+        self.pulse_len.setSingleStep(.2)
+        
+        
 
+        self.absorbption.setEnabled(False)
 
 
 
@@ -394,6 +416,7 @@ class PlaySound(QtCore.QThread):
 
     def __init__(self, audio):
         super(PlaySound, self). __init__()
+        self.folder = 'tmp'
         self.sound = 'sin.wav'
         self.audio = audio
 
@@ -408,15 +431,15 @@ class Average(QtCore.QThread):
 
         self.avgs = 1
         self.audio = audio
-	self.audio.full_data.connect(self.get_data)
+        self.audio.full_data.connect(self.get_data)
         self.sound = 'sin.wav'
     def get_data(self, data):
-	self.dataReady.emit(data)
+        self.dataReady.emit(data)
         self.audio.stop_stream()
     def run(self):
         self.audio.setup_device()
         #datax = (self.audio.average(self.avgs))
-	self.audio.start()
+        self.audio.start()
         #print "playing"
         #play()
         
